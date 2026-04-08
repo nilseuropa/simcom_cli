@@ -4,6 +4,7 @@
 #include "string_utils.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <csignal>
@@ -13,8 +14,12 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <cstring>
 #include <unordered_map>
 #include <vector>
+
+#include <readline/history.h>
+#include <readline/readline.h>
 
 namespace {
 
@@ -217,6 +222,29 @@ std::vector<std::string> split_words(std::string_view input) {
     return words;
 }
 
+const std::vector<std::string>& interactive_local_commands() {
+    static const std::vector<std::string> commands{
+        ":help",
+        ":raw",
+        ":timeout",
+        ":quit",
+        ":exit",
+    };
+    return commands;
+}
+
+const std::vector<std::string>& interactive_top_level_commands() {
+    static const std::vector<std::string> commands{
+        "info",
+        "status",
+        "get",
+        "show",
+        "set",
+        "raw",
+    };
+    return commands;
+}
+
 const std::unordered_map<std::string, std::string>& get_command_aliases() {
     static const std::unordered_map<std::string, std::string> aliases{
         {"ID", "ATI"},
@@ -262,6 +290,152 @@ const std::unordered_map<std::string, std::string>& get_command_aliases() {
         {"CNMP", "AT+CNMP?"},
     };
     return aliases;
+}
+
+std::vector<std::string> get_command_names() {
+    std::vector<std::string> names;
+    names.reserve(get_command_aliases().size());
+    for (const auto& [name, unused_command] : get_command_aliases()) {
+        (void)unused_command;
+        std::string lower = name;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        names.push_back(std::move(lower));
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
+const std::vector<std::string>& interactive_set_targets() {
+    static const std::vector<std::string> targets{
+        "apn",
+        "cmee",
+        "cnmp",
+        "dialmode",
+        "netmode",
+        "network-mode",
+        "operator",
+        "modem-reset",
+        "reset",
+        "usbnetmode",
+    };
+    return targets;
+}
+
+const std::vector<std::string>& interactive_set_values(std::string_view target) {
+    static const std::vector<std::string> empty;
+    static const std::vector<std::string> operator_values{"auto"};
+    static const std::vector<std::string> network_mode_values{"auto", "gsm", "lte"};
+    static const std::vector<std::string> binary_values{"0", "1"};
+
+    const std::string key = normalize_keyword(target);
+    if (key == "OPERATOR") {
+        return operator_values;
+    }
+    if (key == "NETWORK-MODE" || key == "NETMODE" || key == "CNMP") {
+        return network_mode_values;
+    }
+    if (key == "USBNETMODE" || key == "DIALMODE") {
+        return binary_values;
+    }
+    return empty;
+}
+
+std::vector<std::string> interactive_matches(std::string_view prefix,
+                                             const std::vector<std::string>& candidates) {
+    std::vector<std::string> matches;
+    const std::string normalized_prefix = to_upper(prefix);
+    for (const auto& candidate : candidates) {
+        if (normalized_prefix.empty() ||
+            starts_with_ci(candidate, normalized_prefix)) {
+            matches.push_back(candidate);
+        }
+    }
+    return matches;
+}
+
+char* duplicate_match(const std::string& value) {
+    char* copy = static_cast<char*>(std::malloc(value.size() + 1));
+    if (copy == nullptr) {
+        return nullptr;
+    }
+    std::memcpy(copy, value.c_str(), value.size() + 1);
+    return copy;
+}
+
+char* interactive_completion_generator(const char* text, int state) {
+    static std::vector<std::string> matches;
+    static std::size_t index = 0;
+
+    if (state == 0) {
+        matches.clear();
+        index = 0;
+
+        const std::string line = rl_line_buffer != nullptr ? rl_line_buffer : "";
+        std::vector<std::string> words = split_words(line);
+        const bool trailing_space =
+            !line.empty() && std::isspace(static_cast<unsigned char>(line.back())) != 0;
+
+        const int word_index = trailing_space ? static_cast<int>(words.size())
+                                              : static_cast<int>(words.size()) - 1;
+
+        if (word_index <= 0) {
+            if (!text[0] || text[0] == ':') {
+                const auto local_matches =
+                    interactive_matches(text, interactive_local_commands());
+                matches.insert(matches.end(), local_matches.begin(), local_matches.end());
+            }
+
+            if (!text[0] || text[0] != ':') {
+                const auto top_level_matches =
+                    interactive_matches(text, interactive_top_level_commands());
+                matches.insert(matches.end(), top_level_matches.begin(), top_level_matches.end());
+            }
+        } else {
+            const std::string first = normalize_keyword(words.front());
+            if (first == "GET" || first == "SHOW") {
+                matches = interactive_matches(text, get_command_names());
+            } else if (first == "SET") {
+                if (word_index == 1) {
+                    matches = interactive_matches(text, interactive_set_targets());
+                } else if (words.size() >= 2) {
+                    matches = interactive_matches(text, interactive_set_values(words[1]));
+                }
+            } else if (first == "RAW" && word_index == 1) {
+                matches = interactive_matches(text, std::vector<std::string>{"AT"});
+            }
+        }
+    }
+
+    if (index >= matches.size()) {
+        return nullptr;
+    }
+
+    return duplicate_match(matches[index++]);
+}
+
+char** interactive_completion(const char* text, int start, int end) {
+    (void)start;
+    (void)end;
+    return rl_completion_matches(text, interactive_completion_generator);
+}
+
+std::optional<std::string> read_interactive_line(const char* prompt) {
+    char* raw_line = readline(prompt);
+    if (raw_line == nullptr) {
+        return std::nullopt;
+    }
+
+    std::string line{raw_line};
+    std::free(raw_line);
+
+    if (!trim(line).empty()) {
+        add_history(line.c_str());
+    }
+
+    return line;
 }
 
 std::optional<std::string> resolve_get_command(std::string_view name) {
@@ -489,9 +663,16 @@ void run_interactive(AtClient& client, Options& options) {
     std::cout << "Interactive modem shell on " << options.device << " @" << options.baud_rate
               << ". Use :help for local commands.\n";
 
-    std::string line;
-    while (std::cout << "simcom> " && std::getline(std::cin, line)) {
-        line = trim(line);
+    rl_attempted_completion_function = interactive_completion;
+    rl_completion_append_character = ' ';
+
+    while (true) {
+        const auto input = read_interactive_line("simcom> ");
+        if (!input) {
+            break;
+        }
+
+        std::string line = trim(*input);
         if (line.empty()) {
             continue;
         }

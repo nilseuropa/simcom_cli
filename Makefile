@@ -8,13 +8,14 @@ DEPS := $(OBJS:.o=.d)
 CPPFLAGS += -Iinclude
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion -MMD -MP
 LDFLAGS ?=
+LDLIBS += -lreadline
 
 .PHONY: all clean run
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) | bin
-	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
+	$(CXX) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 build/%.o: src/%.cpp | build
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
