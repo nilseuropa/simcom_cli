@@ -267,6 +267,19 @@ std::string describe_cpas(const int state) {
     }
 }
 
+std::string describe_cnmp(const int mode) {
+    switch (mode) {
+    case 2:
+        return "automatic";
+    case 13:
+        return "GSM only";
+    case 38:
+        return "LTE only";
+    default:
+        return std::to_string(mode) + " (vendor specific or unsupported)";
+    }
+}
+
 ParsedResponse parse_error_result(const AtResponse& response) {
     ParsedResponse parsed;
     parsed.handled = true;
@@ -604,6 +617,23 @@ ParsedResponse parse_cpas(const AtResponse& response) {
     return parsed;
 }
 
+ParsedResponse parse_cnmp(const AtResponse& response) {
+    ParsedResponse parsed;
+    const auto payload = find_prefixed_payload(response, "+CNMP");
+    if (!payload) {
+        return parsed;
+    }
+
+    const auto mode = parse_int(*payload);
+    if (!mode) {
+        return parsed;
+    }
+
+    parsed.handled = true;
+    parsed.summary_lines.push_back("Network mode: " + describe_cnmp(*mode));
+    return parsed;
+}
+
 ParsedResponse parse_ati(const AtResponse& response) {
     return parse_identity_lines(response, "Identification");
 }
@@ -629,6 +659,7 @@ const std::unordered_map<std::string, Parser>& parser_table() {
         {"+CMEE", &parse_cmee},
         {"+CFUN", &parse_cfun},
         {"+CPAS", &parse_cpas},
+        {"+CNMP", &parse_cnmp},
     };
     return parsers;
 }
@@ -655,7 +686,7 @@ std::vector<std::string> supported_parser_commands() {
         "ATI",        "AT+CGMI",   "AT+CGMM",   "AT+CGMR",  "AT+CGSN",
         "AT+CIMI",    "AT+CPIN?",  "AT+CSQ",    "AT+CREG?", "AT+CGREG?",
         "AT+CEREG?",  "AT+COPS?",  "AT+CGATT?", "AT+CGACT?","AT+CGDCONT?",
-        "AT+CCLK?",   "AT+CMEE?",  "AT+CFUN?",  "AT+CPAS",
+        "AT+CCLK?",   "AT+CMEE?",  "AT+CFUN?",  "AT+CPAS",  "AT+CNMP?",
     };
     return commands;
 }

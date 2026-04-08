@@ -257,6 +257,9 @@ const std::unordered_map<std::string, std::string>& get_command_aliases() {
         {"CFUN", "AT+CFUN?"},
         {"ACTIVITY", "AT+CPAS"},
         {"CPAS", "AT+CPAS"},
+        {"NETWORK-MODE", "AT+CNMP?"},
+        {"NETMODE", "AT+CNMP?"},
+        {"CNMP", "AT+CNMP?"},
     };
     return aliases;
 }
@@ -329,6 +332,39 @@ std::string build_set_command(const std::vector<std::string>& args) {
             throw std::runtime_error("usage: set dialmode <0|1>");
         }
         return "AT+DIALMODE=" + args[1];
+    }
+
+    if (key == "OPERATOR") {
+        if (args.size() != 2 || normalize_keyword(args[1]) != "AUTO") {
+            throw std::runtime_error("usage: set operator auto");
+        }
+        return "AT+COPS=0";
+    }
+
+    if (key == "NETWORK-MODE" || key == "NETMODE" || key == "CNMP") {
+        if (args.size() != 2) {
+            throw std::runtime_error("usage: set network-mode <auto|gsm|lte>");
+        }
+
+        const std::string mode = normalize_keyword(args[1]);
+        if (mode == "AUTO") {
+            return "AT+CNMP=2";
+        }
+        if (mode == "GSM") {
+            return "AT+CNMP=13";
+        }
+        if (mode == "LTE") {
+            return "AT+CNMP=38";
+        }
+
+        throw std::runtime_error("usage: set network-mode <auto|gsm|lte>");
+    }
+
+    if (key == "RESET" || key == "MODEM-RESET") {
+        if (args.size() != 1) {
+            throw std::runtime_error("usage: set reset");
+        }
+        return "AT+CFUN=1,1";
     }
 
     const std::vector<std::string> values{args.begin() + 1, args.end()};

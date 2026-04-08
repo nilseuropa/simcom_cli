@@ -31,8 +31,12 @@ High-level commands:
 ./bin/simcom_cli info
 ./bin/simcom_cli get signal
 ./bin/simcom_cli get operator
+./bin/simcom_cli get network-mode
 ./bin/simcom_cli set cmee 2
 ./bin/simcom_cli set apn 1 internet
+./bin/simcom_cli set operator auto
+./bin/simcom_cli set network-mode lte
+./bin/simcom_cli set reset
 ./bin/simcom_cli set usbnetmode 1
 ```
 
@@ -103,11 +107,15 @@ This mode just prints incoming modem lines with timestamps until `Ctrl-C`.
 - `errors`, `cmee`
 - `functionality`, `fun`, `cfun`
 - `activity`, `cpas`
+- `network-mode`, `netmode`, `cnmp`
 
 `set <name> <value...>` supports:
 
 - generic AT setters such as `set cmee 2` -> `AT+CMEE=2`
 - `set apn <cid> <apn> [pdp_type]`
+- `set operator auto` -> `AT+COPS=0`
+- `set network-mode <auto|gsm|lte>` -> `AT+CNMP=<...>`
+- `set reset` -> `AT+CFUN=1,1`
 - `set usbnetmode <0|1>` -> `AT$MYCONFIG="usbnetmode",<value>`
 - `set dialmode <0|1>` -> `AT+DIALMODE=<value>`
 
@@ -136,6 +144,7 @@ The CLI currently decodes these common status/configuration commands:
 - `AT+CMEE?`
 - `AT+CFUN?`
 - `AT+CPAS`
+- `AT+CNMP?`
 
 Unknown commands still work; the CLI falls back to printing the modem's raw response lines.
 
